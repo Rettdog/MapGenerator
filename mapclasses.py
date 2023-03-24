@@ -1,5 +1,6 @@
 from typing import Optional
 import pygame
+import math
 
 
 def ccw(A, B, C):
@@ -67,6 +68,9 @@ class Line:
     
     def drawLine(self, window, color):
         pygame.draw.line(window, color, self.startPos, self.endPos)
+
+    def calculateLength(self):
+        return math.sqrt((self.start.x-self.end.x)**2 + (self.start.y-self.end.y)**2)
     
 class ConnectedPoint(Point):
 

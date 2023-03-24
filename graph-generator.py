@@ -56,12 +56,16 @@ for i in range(250):
         #     break
         currentLine = Line(pos, node[0])
         # currentLine.drawLine(window, green)
-        foundIntersection = False
+
+        if currentLine.calculateLength()>50:
+            continue
+
+        shouldDrawLine = True
         for line in lines:
             if currentLine.isIntersecting(line):
-                foundIntersection = True
-                # currentLine.drawLine(window, red)
-        if not foundIntersection:
+                shouldDrawLine=False
+                break
+        if shouldDrawLine:
             currentAmount+=1
             print(currentAmount)
             lines.append(currentLine)
