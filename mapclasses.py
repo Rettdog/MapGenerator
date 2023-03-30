@@ -1,6 +1,7 @@
 from typing import Optional
 import pygame
 import math
+import random
 
 
 def ccw(A, B, C):
@@ -131,6 +132,37 @@ class Graph:
         for id,node in self.graph.items():
             if node[0]==point:
                 return id
+        return -1
+    
+    def getRandomNodes(self, amount):
+        outputIds = []
+        if amount>len(self.ids):
+            return outputIds
+        while len(outputIds) < amount:
+            id = self.ids[random.randrange(0,len(self.ids))]
+            if not id in outputIds:
+                outputIds.append(id)
+        return outputIds
+    
+    def getRandomConnection(self, id, exludeIds):
+        if id in self.ids:
+            connections = list(set(self.graph[id][1]) - set(exludeIds))
+            if len(connections) == 0:
+                return -1
+            
+            return connections[random.randrange(0,len(connections))]
+        return -1
+    
+    def getRandomConnectionV2(self, id, excludeId):
+        if id in self.ids:
+            connections = self.graph[id][1]
+            timeout=0
+            while timeout<100:
+                nextId = connections[random.randrange(0, len(connections))]
+                if nextId != excludeId:
+                    print(nextId, excludeId)
+                    return nextId
+                timeout+=1
         return -1
     
     def display(self):
