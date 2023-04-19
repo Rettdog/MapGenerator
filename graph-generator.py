@@ -125,7 +125,7 @@ def step():
                 continents.append(pathPoints)
 
                 value = int(2+pathPoints[0][1]/win_height*(len(polarColorPallete)-4))
-                print(f'latitude: {value}')
+                # print(f'latitude: {value}')
                 color = polarColorPallete[random.randint(value-2, value+2)]
 
                 continentColors.append(color)
