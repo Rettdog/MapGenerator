@@ -153,18 +153,30 @@ class Graph:
             return connections[random.randrange(0,len(connections))]
         return -1
     
-    def getRandomConnectionV2(self, id, excludeId):
-        if id in self.ids:
-            connections = self.graph[id][1]
-            timeout=0
-            while timeout<100:
-                nextId = connections[random.randrange(0, len(connections))]
-                if nextId != excludeId:
-                    print(nextId, excludeId)
-                    return nextId
-                timeout+=1
-        return -1
-    
     def display(self):
         for key, value in self.graph.items():
             print(f'{key}: ({value[0].x}, {value[0].y}) -> {value[1]}')
+
+
+def export_window_as_png(window, filename):
+    """
+    Export Pygame window as a PNG file.
+
+    Args:
+    - window: Pygame window object to be exported.
+    - filename: Name of the PNG file to be saved.
+
+    Returns:
+    - None
+    """
+    # Get the surface of the window
+    surface = pygame.display.get_surface()
+
+    # Create a new surface with the same dimensions as the window
+    image = pygame.Surface(surface.get_size())
+
+    # Draw the contents of the window onto the new surface
+    image.blit(surface, (0, 0))
+
+    # Save the new surface as a PNG file
+    pygame.image.save(image, filename)
