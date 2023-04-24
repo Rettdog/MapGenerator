@@ -12,7 +12,7 @@ pygame.init()
 win_width = 1000
 win_height = 750
 window = pygame.display.set_mode((win_width, win_height))
-pygame.display.set_caption("Random Lines")
+pygame.display.set_caption("Map Generator")
 
 # Set up the colors
 black = (0, 0, 0)
@@ -26,7 +26,8 @@ blue = (0, 0, 255)
 
 colorPallete = [pygame.Color('#F0D197'), pygame.Color('#b6ad90'),
                 pygame.Color('#a68a64'), pygame.Color('#656d4a'), pygame.Color('#333d29'), 
-                pygame.Color('#676f54'), pygame.Color('#7d7d70'), pygame.Color('#858A89'), pygame.Color('#faf3dd')]
+                pygame.Color('#676f54'), pygame.Color('#7d7d70'), pygame.Color('#858A89'), 
+                pygame.Color('#faf3dd'), pygame.Color('#fcfffc'), pygame.Color('#ffffff')]
 
 polarColorPallete = colorPallete.copy()
 polarColorPallete.reverse()
@@ -46,7 +47,7 @@ clock = pygame.time.Clock()
 
 #constants
 connectionAmount = 3
-minContinentSides = 15
+minContinentSides = 10
 maxLength = 45
 numPoints = 750
 
@@ -191,6 +192,45 @@ def generateContinent():
             break
     drawContinents()
 
+def waterDepth(x,y, color):
+    point = Point(x, y)
+    minLength = 250
+    divisor = 30
+    multiplier = 10
+    # max levels to water is minLenth/divisor
+    # level width is based on multiplier and divisor ratio
+    for continent in continents:
+
+        length1 = Line(point, Point(
+            continent[0][0], continent[0][1])).calculateLength()
+        if length1 < minLength:
+            minLength = length1
+            if minLength < divisor:
+                break
+
+        length2 = Line(point, Point(
+            continent[len(continent)//3][0], continent[len(continent)//3][1])).calculateLength()
+        if length2 < minLength:
+            minLength = length2
+            if minLength < divisor:
+                break
+
+        length3 = Line(point, Point(
+            continent[2*len(continent)//3][0], continent[2*len(continent)//3][1])).calculateLength()
+        if length3 < minLength:
+            minLength = length3
+            if minLength < divisor:
+                break
+    layer = minLength//divisor
+    offset = int(random.randrange(1, 3) -
+                    multiplier*layer)
+    color[0] = max(0, min(water[0] + offset, 255))
+    color[1] = max(0, min(water[1] + offset, 255))
+    color[2] = max(
+        0, min(water[2] + offset, 255))
+    
+    return (layer, color)
+    
 
 # Loop until the user clicks the close button
 while running:
@@ -226,7 +266,7 @@ while running:
                 # print(waterMask)
                 window.fill(water)
                 drawContinents()
-                blurred_image = pygame.transform.gaussian_blur(window, 10)
+                blurred_image = pygame.transform.gaussian_blur(window, 3)
                 rect = blurred_image.get_rect()
                 rect.center = (win_width//2, win_height//2)
                 blurred_image.blit(waterMask.to_surface(setcolor=water, unsetcolor=(0,0,0,0)), rect)
@@ -256,7 +296,11 @@ while running:
                     x = random.randint(0, win_width-1)
                     y = random.randint(0, win_height-1)
                     color = window.get_at((x, y))
-                    pygame.draw.circle(window, color, (x, y), j)
+                    if color.rgb == water:
+                        layer, color = waterDepth(x,y,color)
+                        pygame.draw.circle(window, color, (x, y), j*(layer+1)/2)
+                    else:
+                        pygame.draw.circle(window, color, (x, y), j)
 
         # roughen edges with squares
         if keys[pygame.K_s]:
@@ -265,8 +309,15 @@ while running:
                     x = random.randint(0, win_width-1)
                     y = random.randint(0, win_height-1)
                     color = window.get_at((x, y))
-                    rect = pygame.Rect(x-j//2, y-j//2, j, j)
-                    pygame.draw.rect(window, color, rect)
+                    if color.rgb == water:
+                        layer, color = waterDepth(x, y, color)
+                        rect = pygame.Rect(
+                            x-j*(layer+1)//2, y-j*(layer+1)//2, j*(layer+1), j*(layer+1))
+                        pygame.draw.rect(window, color, rect)
+                    else:
+                        rect = pygame.Rect(x-j//2, y-j//2, j, j)
+                        pygame.draw.rect(window, color, rect)
+                    
 
         # roughen edges with polygons
         if keys[pygame.K_p]:
@@ -274,22 +325,32 @@ while running:
                 for i in range(0, 500):
                     x = random.randint(0, win_width-1)
                     y = random.randint(0, win_height-1)
-                    x1 = random.randint(x-j, x+j+1)
-                    y1 = random.randint(y-j, y+j+1)
-                    x2 = random.randint(x-j, x+j+1)
-                    y2 = random.randint(y-j, y+j+1)
-                    x3 = random.randint(x-j, x+j+1)
-                    y3 = random.randint(y-j, y+j+1)
-                    x4 = random.randint(x-j, x+j+1)
-                    y4 = random.randint(y-j, y+j+1)
+                    width = j
                     color = window.get_at((x, y))
-                    pygame.draw.polygon(window, color, [(x1, y1), (x2, y2), (x3, y3), (x4, y4)])
-        
+                    if color.rgb == water:
+                        layer, color = waterDepth(x, y, color)
+                        width = int(j+layer*2)
+                    x1 = random.randint(x-width, x+width+1)
+                    y1 = random.randint(y-width, y+width+1)
+                    x2 = random.randint(x-width, x+width+1)
+                    y2 = random.randint(y-width, y+width+1)
+                    x3 = random.randint(x-width, x+width+1)
+                    y3 = random.randint(y-width, y+width+1)
 
+                    pygame.draw.polygon(window, color, [(x1, y1), (x2, y2), (x3, y3)])
 
-
-
-    
+        # add color to just deep ocean for faster rendering of other roughening algorthims
+        if keys[pygame.K_o]:
+            for j in range(5, 3, -1):
+                for i in range(0, 500):
+                    x = random.randint(0, win_width-1)
+                    y = random.randint(0, win_height-1)
+                    color = window.get_at((x, y))
+                    if color.rgb == water:
+                        layer, color = waterDepth(x, y, color)
+                        if layer > 1:
+                            pygame.draw.circle(
+                                window, color, (x, y), j*(layer+1)/1.5)
 
     # Update the screen
     pygame.display.update()
