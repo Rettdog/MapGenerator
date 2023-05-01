@@ -1,3 +1,7 @@
+import pygame_widgets
+from pygame_widgets.slider import Slider
+from pygame_widgets.textbox import TextBox
+from pygame_widgets.button import Button
 import pygame
 import random
 import time
@@ -9,10 +13,35 @@ import numpy as np
 pygame.init()
 
 # Set up the window
-win_width = 1000
+map_width = 1000
+slider_width = 300
+win_width = map_width+slider_width
 win_height = 750
 window = pygame.display.set_mode((win_width, win_height))
 pygame.display.set_caption("Map Generator")
+
+# Set up sliders
+densitySlider = Slider(window, map_width+20, 40,slider_width-40,10,min=1, max=150, step=1, initial=85)
+
+sidesSlider = Slider(window, map_width+20, 80,slider_width-40,10,min=0, max=99, step=1, initial=10)
+
+distanceSlider = Slider(window, map_width+20, 120,slider_width-40,10,min=0, max=99, step=1, initial=55)
+
+slider = Slider(window, map_width+20, 160, slider_width -
+                40, 10, min=1, max=5, step=1)
+
+amountSlider = Slider(window, map_width+20, 280,
+                     slider_width-40, 10, min=1, max=100, step=1, initial=15)
+
+nodeButton = Button(window, map_width+20, 200, slider_width -
+                    40, 30, onClick=lambda: generateNodes())
+
+shapeValues = ['dot', 'square', 'triangle']
+shapeSlider = Slider(window, map_width+20, 320,
+                        slider_width-40, 10, min=0, max=len(shapeValues)-1, step=1)
+
+mapButton = Button(window, map_width+20, 360, slider_width -
+                   40, 30, onClick=lambda: generateMultipleContinents())
 
 # Set up the colors
 black = (0, 0, 0)
@@ -20,6 +49,50 @@ white = (255, 255, 255)
 red = (255, 0, 0)
 green = (0, 255, 0)
 blue = (0, 0, 255)
+
+# fonts
+font = pygame.font.Font('freesansbold.ttf', 15)
+
+nodeText = font.render('Node Generation', True, black, white)
+nodeRect = nodeText.get_rect()
+nodeRect.center = (win_width - slider_width//2, 20)
+
+mapText = font.render('Continent Generation', True, black, white)
+mapRect = mapText.get_rect()
+mapRect.center = (win_width - slider_width//2, 260)
+
+densityText = font.render('Density: ', True, black, white)
+densityRect = densityText.get_rect()
+densityRect.center = (win_width - slider_width + densityRect.width//2 + 20, 60)
+
+sidesText = font.render('Continent Sides: ', True, black, white)
+sidesRect = sidesText.get_rect()
+sidesRect.center = (win_width - slider_width + sidesRect.width//2 + 20, 100)
+
+distanceText = font.render('Minimum Distance: ', True, black, white)
+distanceRect = distanceText.get_rect()
+distanceRect.center = (win_width - slider_width +
+                       distanceRect.width//2 + 20, 140)
+
+sliderText = font.render('Connections: ', True, black, white)
+sliderRect = sliderText.get_rect()
+sliderRect.center = (win_width - slider_width + sliderRect.width//2 + 20, 180)
+
+nodeButtonText = font.render('Generate Nodes: ', True, black, white)
+nodeButtonRect = nodeButtonText.get_rect()
+nodeButtonRect.center = (win_width - slider_width//2, 215)
+
+amountText = font.render('Amount: ', True, black, white)
+amountRect = amountText.get_rect()
+amountRect.center = (win_width - slider_width + amountRect.width//2 + 20, 300)
+
+shapeText = font.render('Shape: ', True, black, white)
+shapeRect = shapeText.get_rect()
+shapeRect.center = (win_width - slider_width + shapeRect.width//2 + 20, 340)
+
+mapButtonText = font.render('Generate Continents', True, black, white)
+mapButtonRect = mapButtonText.get_rect()
+mapButtonRect.center = (win_width - slider_width//2, 375)
 
 # continentColors = ['#c2c5aa', '#b6ad90',
 #     '#a68a64', '#656d4a', '#333d29', '#676f54']
@@ -45,48 +118,10 @@ graph = Graph()
 running = True
 clock = pygame.time.Clock()
 
-#constants
-connectionAmount = 3
-minContinentSides = 10
-maxLength = 45
-numPoints = 750
-
-lines=[]
-
-for i in range(numPoints):
-    pos = Point(random.randint(0, win_width),
-                      random.randint(0, win_height))
-    currentAmount = 0
-    connectionIds = []
-    for id in graph.getGraph().keys():
-        node = graph.getGraph()[id]
-        currentLine = Line(pos, node[0])
-
-        if currentLine.calculateLength() > maxLength:
-            continue
-
-        shouldDrawLine = True
-        for line in lines:
-            if currentLine.isIntersecting(line):
-                shouldDrawLine=False
-                break
-        if shouldDrawLine:
-            currentAmount+=1
-            lines.append(currentLine)
-            pygame.draw.line(window, black, currentLine.startPos, currentLine.endPos)
-            connectionIds.append(id)
-
-        if currentAmount>=connectionAmount:
-            break
-    graph.addNodeWithConnections(pos, connectionIds)
-
-for id in graph.getIds():
-    currentPoint = start = graph.getGraph()[id]
-    start = currentPoint[0]
-    pygame.draw.circle(window, red, start.asCoordinate(), 4)
-    for connectionId in graph.getGraph()[id][1]:
-        end = graph.getGraph()[connectionId][0]
-        pygame.draw.line(window, black, start.asCoordinate(), end.asCoordinate())
+minContinentSides = sidesSlider.getValue()
+connectionAmount = slider.getValue()
+maxLength = distanceSlider.getValue()
+numPoints = int(densitySlider.getValue()*5*10**6/map_width/win_height)
 
 continents = []
 continentColors = []
@@ -94,8 +129,64 @@ continentColors = []
 path = []
 pathPoints = []
 
+def generateNodes():
+    global graph, continents, continentColors, path, pathPoints
+
+    continents = []
+    continentColors = []
+    path = []
+    pathPoints = []
+
+    graph.clear()
+
+    pygame.draw.rect(window, white, pygame.Rect(
+        0, 0, map_width, win_height))
+
+    connectionAmount = slider.getValue()
+    maxLength = distanceSlider.getValue()
+    numPoints = int(densitySlider.getValue()*5*10**6/map_width/win_height)
+
+    lines=[]
+
+    for i in range(numPoints):
+        pos = Point(random.randint(0, map_width),
+                        random.randint(0, win_height))
+        currentAmount = 0
+        connectionIds = []
+        for id in graph.getGraph().keys():
+            node = graph.getGraph()[id]
+            currentLine = Line(pos, node[0])
+
+            if currentLine.calculateLength() > maxLength:
+                continue
+
+            shouldDrawLine = True
+            for line in lines:
+                if currentLine.isIntersecting(line):
+                    shouldDrawLine=False
+                    break
+            if shouldDrawLine:
+                currentAmount+=1
+                lines.append(currentLine)
+                pygame.draw.line(window, black, currentLine.startPos, currentLine.endPos)
+                connectionIds.append(id)
+
+            if currentAmount>=connectionAmount:
+                break
+        graph.addNodeWithConnections(pos, connectionIds)
+
+    for id in graph.getIds():
+        currentPoint = start = graph.getGraph()[id]
+        start = currentPoint[0]
+        pygame.draw.circle(window, red, start.asCoordinate(), 4)
+        for connectionId in graph.getGraph()[id][1]:
+            end = graph.getGraph()[connectionId][0]
+            pygame.draw.line(window, black, start.asCoordinate(), end.asCoordinate())
+
+    pygame.display.update()
+
 def initPath():
-    global path, pathPoints
+    global path, pathPoints, graph
     path = []
     pathPoints = []
     currentId = graph.getRandomNodes(1)[0]
@@ -105,6 +196,7 @@ def initPath():
 
 def step():
     global path, pathPoints
+    minContinentSides = sidesSlider.getValue()
     currentId = path[-1]
     if len(path)>1:
         nextId = graph.getRandomConnection(currentId, path[1:])
@@ -142,7 +234,7 @@ def step():
     #                  graph.getGraph()[nextId][0].asCoordinate(), 2)
     # pygame.draw.circle(window, blue, graph.getGraph()[
     #                    nextId][0].asCoordinate(), 5)
-    if len(path) > maxLength*2:
+    if len(path) > 100:
         print('length exceded')
         return -1
     return 0
@@ -172,8 +264,10 @@ def drawContinents():
             pygame.draw.polygon(
                 window, (0,0,0), path)
 
-def generateContinent():    
-
+def generateContinent():
+    global graph
+    if len(graph.getIds()) == 0:
+        return
     timeout = 0
     createdContinent = False
     while not createdContinent:
@@ -191,6 +285,13 @@ def generateContinent():
             # print("timeout")
             break
     drawContinents()
+
+def generateMultipleContinents():
+    pygame.draw.rect(window, water, pygame.Rect(
+        0, 0, map_width, win_height))
+    amount = amountSlider.getValue()
+    for i in range(amount):
+        generateContinent()
 
 def waterDepth(x,y, color):
     point = Point(x, y)
@@ -235,12 +336,13 @@ def waterDepth(x,y, color):
 # Loop until the user clicks the close button
 while running:
     # Handle events
-    for event in pygame.event.get():
+    events = pygame.event.get()
+    for event in events:
         if event.type == pygame.QUIT:
             running = False
 
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            generateContinent()
+        # if event.type == pygame.MOUSEBUTTONDOWN:
+        #     generateContinent()
 
         if event.type == pygame.KEYDOWN:
 
@@ -268,7 +370,7 @@ while running:
                 drawContinents()
                 blurred_image = pygame.transform.gaussian_blur(window, 3)
                 rect = blurred_image.get_rect()
-                rect.center = (win_width//2, win_height//2)
+                rect.center = (map_width//2, win_height//2)
                 blurred_image.blit(waterMask.to_surface(setcolor=water, unsetcolor=(0,0,0,0)), rect)
                 window.blit(blurred_image, rect)
 
@@ -279,7 +381,7 @@ while running:
                 window.set_colorkey(water)
                 waterMask = pygame.mask.from_surface(window)
                 rect = window.get_rect()
-                rect.center = (win_width//2, win_height//2)
+                rect.center = (map_width//2, win_height//2)
                 window.blit(waterMask.to_surface(), rect, None, 0)
 
         # Get the state of all keys on the keyboard
@@ -293,10 +395,10 @@ while running:
         if keys[pygame.K_d]:
             for j in range(5, 1, -1):
                 for i in range(0, 500):
-                    x = random.randint(0, win_width-1)
+                    x = random.randint(0, map_width-1)
                     y = random.randint(0, win_height-1)
                     color = window.get_at((x, y))
-                    if color.rgb == water:
+                    if color == water:
                         layer, color = waterDepth(x,y,color)
                         pygame.draw.circle(window, color, (x, y), j*(layer+1)/2)
                     else:
@@ -306,10 +408,10 @@ while running:
         if keys[pygame.K_s]:
             for j in range(5, 1, -1):
                 for i in range(0, 500):
-                    x = random.randint(0, win_width-1)
+                    x = random.randint(0, map_width-1)
                     y = random.randint(0, win_height-1)
                     color = window.get_at((x, y))
-                    if color.rgb == water:
+                    if color == water:
                         layer, color = waterDepth(x, y, color)
                         rect = pygame.Rect(
                             x-j*(layer+1)//2, y-j*(layer+1)//2, j*(layer+1), j*(layer+1))
@@ -323,11 +425,11 @@ while running:
         if keys[pygame.K_p]:
             for j in range(5, 1, -1):
                 for i in range(0, 500):
-                    x = random.randint(0, win_width-1)
+                    x = random.randint(0, map_width-1)
                     y = random.randint(0, win_height-1)
                     width = j
                     color = window.get_at((x, y))
-                    if color.rgb == water:
+                    if color == water:
                         layer, color = waterDepth(x, y, color)
                         width = int(j+layer*2)
                     x1 = random.randint(x-width, x+width+1)
@@ -339,6 +441,7 @@ while running:
 
                     pygame.draw.polygon(window, color, [(x1, y1), (x2, y2), (x3, y3)])
 
+
         # add color to just deep ocean for faster rendering of other roughening algorthims
         if keys[pygame.K_o]:
             for j in range(5, 3, -1):
@@ -346,13 +449,46 @@ while running:
                     x = random.randint(0, win_width-1)
                     y = random.randint(0, win_height-1)
                     color = window.get_at((x, y))
-                    if color.rgb == water:
+                    if color == water:
                         layer, color = waterDepth(x, y, color)
                         if layer > 1:
                             pygame.draw.circle(
                                 window, color, (x, y), j*(layer+1)/1.5)
 
+    pygame.draw.rect(window, white, pygame.Rect(map_width, 0, slider_width, win_height))
+
+    window.blit(nodeText, nodeRect)
+    window.blit(mapText, mapRect)
+
+    densityText = font.render(f'Density: {densitySlider.getValue()}', True, black, white)
+    window.blit(densityText, densityRect)
+
+    sidesText = font.render(
+        f'Continent Sides: {sidesSlider.getValue()}', True, black, white)
+    window.blit(sidesText, sidesRect)
+
+    distanceText = font.render(
+        f'Minimum Distance: {distanceSlider.getValue()}', True, black, white)
+    window.blit(distanceText, distanceRect)
+
+    sliderText = font.render(
+        f'Slider: {slider.getValue()}', True, black, white)
+    window.blit(sliderText, sliderRect)
+
+    amountText = font.render(
+        f'Amount: {amountSlider.getValue()}', True, black, white)
+    window.blit(amountText, amountRect)
+
+    shapeText = font.render(
+        f'Shape: {shapeValues[shapeSlider.getValue()]}', True, black, white)
+    window.blit(shapeText, shapeRect)
+
     # Update the screen
+    pygame_widgets.update(events)
+
+    window.blit(nodeButtonText, nodeButtonRect)
+    window.blit(mapButtonText, mapButtonRect)
+
     pygame.display.update()
 
     # Limit the frame rate

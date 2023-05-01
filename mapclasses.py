@@ -157,6 +157,10 @@ class Graph:
         for key, value in self.graph.items():
             print(f'{key}: ({value[0].x}, {value[0].y}) -> {value[1]}')
 
+    def clear(self):
+        self.graph = {}
+        self.ids = []
+
 
 def export_window_as_png(window, filename):
     """
