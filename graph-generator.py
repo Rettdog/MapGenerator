@@ -9,11 +9,8 @@ from mapclasses import Line, Point, Graph, WindowInfo, WorldInfo
 from mapclasses import export_window_as_png
 import numpy as np
 
-# TODO: add typing to WindowInfo class
-# TODO: fix color issue in default color palette
-# TODO: add sliders and stuff for water levels
-# TODO: make parchment/tan color palette
 # TODO: migrate some functions to WorldInfo class?
+# TODO: implement make file
 
 # Initialize Pygame
 pygame.init()
@@ -31,29 +28,32 @@ slider_width = 300
 win_height = 750
 
 font = pygame.font.Font('freesansbold.ttf', 15)
+titleFont = pygame.font.Font('freesansbold.ttf', 20)
 
 default_density = (1, 85, 150)
 default_continent_sides = (1, 10, 99)
 default_min_distance = (1, 55, 99)
 default_min_connections = (1, 3, 5)
 default_num_continents = (1, 35, 100)
+default_water_levels = (1,8,20)
+default_water_width = (10,30,100)
 
 density_coefficient = 5*10**6
 
-info = WindowInfo(map_width, slider_width, win_height, font, default_density, 
+info = WindowInfo(map_width, slider_width, win_height, font, titleFont, default_density, 
                   default_continent_sides, default_min_distance, default_min_connections, 
-                  default_num_continents, density_coefficient)
+                  default_num_continents, density_coefficient, default_water_levels, default_water_width)
 
 # Set up the window
 window = pygame.display.set_mode((info.win_width, info.win_height))
 pygame.display.set_caption("Map Generator")
 
 # Set up sliders
-densitySlider, sidesSlider, distanceSlider, connectionsSlider, continentsSlider, shapeSlider, colorSlider = info.createSliders(window)
+densitySlider, sidesSlider, distanceSlider, connectionsSlider, continentsSlider, shapeSlider, colorSlider, waterLevelsSlider, waterWidthSlider = info.createSliders(window)
 
 #Set up buttons
-nodeButton, mapButton, refineButton, autoButton = info.createButtons(
-    window, lambda: generateNodes(), lambda:  generateMultipleContinents(), lambda: refine(), lambda: autoGenerate())
+nodeButton, mapButton, clearButton, refineButton, autoButton, colorButton, waterButton, redrawButton, exportButton = info.createButtons(
+    window, lambda: generateNodes(), lambda: updateColor(), lambda:  generateMultipleContinents(), lambda: clearContinents(), lambda: refine(), lambda: redraw(), lambda: autoGenerate(), lambda: refine('water'), lambda: exportFromButton())
 
 # Set up text boxes
 textBoxes = info.createTextBoxes()
@@ -64,6 +64,7 @@ window.fill(white)
 world = WorldInfo()
 
 def generateNodes():
+    drawLoading()
 
     world.graph.clear()
 
@@ -136,21 +137,8 @@ def step():
                 pathPoints = world.pathPoints[firstIndex:]
                 world.continents.append(pathPoints)
 
-                color = info.getPallete()[random.randint(
-                    0, len(info.getPallete())-1)]
-
-                if info.palettes[info.palette]['isPolar']:
-
-                    # 2+y*colors/height
-                    # value = int(2+pathPoints[0][1]/info.win_height*(len(info.palettes[info.palette])-4))
-                    
-                    # color = info.getPallete()[min(len(info.getPallete()), max(
-                    #     0, random.randint(value-2, value+2)))]
-                    
-                    value = int(pathPoints[0][1]/info.win_height*(len(info.palettes[info.palette])))
-
-                    color = info.getPallete()[min(len(info.getPallete()), max(
-                        0, value))]
+                color = info.getSemiRandomColor(
+                        pathPoints[0][1]/info.win_height)
 
                 world.continentColors.append(color)
                 return 1
@@ -172,6 +160,7 @@ def fill():
     pygame.draw.polygon(window, green, world.pathPoints)
 
 def drawContinents():
+    drawLoading()
     for i in range(len(world.continents)):
 
         path = world.continents[i]
@@ -188,8 +177,10 @@ def drawContinents():
         except:
             pygame.draw.polygon(
                 window, (0,0,0), path)
+    pygame.display.update()
 
 def generateContinent():
+    drawLoading()
     if len(world.graph.getIds()) == 0:
         return
     timeout = 0
@@ -207,22 +198,35 @@ def generateContinent():
         timeout+=1
         if timeout>1000:
             break
+    redraw()
+
+def updateColor():
+    drawLoading()
+    print('update color')
+    info.updatePalette()
+    world.continentColors = []
+    for continent in world.continents:
+        color = info.getSemiRandomColor(continent[0][1]/info.win_height)
+        world.continentColors.append(color)
     drawContinents()
 
 def generateMultipleContinents():
+    drawLoading()
     pygame.draw.rect(window, info.getWater(), pygame.Rect(
         0, 0, map_width, info.win_height))
     for i in range(info.sliders['continents'].getValue()):
         generateContinent()
+    redraw()
+    pygame.display.update()
 
 def waterDepth(x,y, color):
     point = Point(x, y)
-    minLength = 250
-    divisor = 30
-    multiplier = 10
+    minLength = info.getWaterMinLength()
+    width = info.getWaterWidth()
+    multiplier = info.getWaterMultiplier()
     sections = 6
-    # max levels to water is minLenth/divisor
-    # level width is based on multiplier and divisor ratio
+    firstLayerMultiplier = 1.1
+
     for continent in world.continents:
 
         lengths = min(sections, len(continent))
@@ -232,18 +236,17 @@ def waterDepth(x,y, color):
                 continent[i*len(continent)//sections][0], continent[i*len(continent)//sections][1])).calculateLength()
             if length < minLength:
                 minLength = length
-                if minLength < divisor:
-                    layer = minLength//divisor
+                if minLength < width*firstLayerMultiplier:
+                    layer = minLength//(width*firstLayerMultiplier)
                     offset = int(random.randrange(1, 3) -
                                 multiplier*layer)
                     color[0] = max(0, min(info.getWater()[0] + offset, 255))
                     color[1] = max(0, min(info.getWater()[1] + offset, 255))
-                    color[2] = max(
-                        0, min(info.getWater()[2] + offset, 255))
+                    color[2] = max(0, min(info.getWater()[2] + offset, 255))
 
                     return (layer, color)
 
-    layer = minLength//divisor
+    layer = (minLength-width*(firstLayerMultiplier-1))//width
     offset = int(random.randrange(1, 3) -
                     multiplier*layer)
     color[0] = max(0, min(info.getWater()[0] + offset, 255))
@@ -254,6 +257,7 @@ def waterDepth(x,y, color):
     return (layer, color)
     
 def refine(shape=None, attemptsPerIteration=1500):
+    drawLoading()
     if shape is None:
         shape = info.shapes[shapeSlider.getValue()]
     if shape == 'dot':
@@ -272,7 +276,7 @@ def refine(shape=None, attemptsPerIteration=1500):
 
     elif shape == 'square':
 
-        for j in range(5, 1, -1):
+        for j in range(6, 1, -1):
             for i in range(0, attemptsPerIteration):
                 x = random.randint(0, map_width-1)
                 y = random.randint(0, info.win_height-1)
@@ -325,7 +329,7 @@ def refine(shape=None, attemptsPerIteration=1500):
 
         approachingEnd = False
         while not approachingEnd:
-            for j in range(5, 2, -1):
+            for j in range(5, 1, -1):
                 totalHits = 0
                 for i in range(0, attemptsPerIteration):
                     x = random.randint(0, info.win_width-1)
@@ -348,15 +352,40 @@ def refine(shape=None, attemptsPerIteration=1500):
         rect.center = (info.win_width//2, info.win_height//2)
         window.blit(waterMask.to_surface(), rect, None, 0)
 
+    pygame.display.update()
+
+def clearContinents():
+    drawLoading()
+    world.clearContinents()
+    redraw()
+
+def redraw():
+    pygame.draw.rect(window, info.getWater(), pygame.Rect(
+        0, 0, info.map_width, info.win_height))
+    drawContinents()
+
+def drawLoading():
+    text = info.font.render('Loading...', True, (0, 0, 0))
+    rect = text.get_rect()
+    rect.center = (info.win_width-info.slider_width//2, info.win_height-20)
+    window.blit(text, rect)
+    pygame.display.update()
+
 def autoGenerate():
+    drawLoading()
+    clearContinents()
+    updateColor()
     generateNodes()
     generateMultipleContinents()
     refine('water')
     drawContinents()
     refine(shape='dot', attemptsPerIteration=500)
-    for i in range(20):
+    for i in range(25):
         refine(attemptsPerIteration=1500)
 
+def exportFromButton():
+    pygame.display.update()
+    export_window_as_png(window, info.map_width, info.win_height)
 
 running = True
 clock = pygame.time.Clock()
@@ -381,8 +410,7 @@ while running:
 
             # export current screen to .png file
             if event.key == pygame.K_e:
-                filename = f'export/{time.strftime("%Y-%m-%d_%H-%M-%S")}.png'
-                export_window_as_png(window, filename)
+                export_window_as_png(window, info.map_width, info.win_height)
 
             # add water background
             if event.key == pygame.K_r:

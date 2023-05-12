@@ -1,1 +1,1 @@
-intersection
+getPalette
