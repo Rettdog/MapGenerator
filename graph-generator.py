@@ -11,6 +11,7 @@ import numpy as np
 
 # TODO: migrate some functions to WorldInfo class?
 # TODO: implement make file
+# TODO: make outlines for certain palettes to make coastlines?
 
 # Initialize Pygame
 pygame.init()
