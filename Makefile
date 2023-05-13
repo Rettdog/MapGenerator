@@ -15,20 +15,10 @@ $(VENVPATH)/bin/activate: requirements.txt
 .PHONY: install-deps
 install-deps: venv
 
-##run-mapgen: run the map generator 
-.PHONY: run-mapgen
-run-mapgen: install-deps
+##run: run the map generator 
+.PHONY: run
+run: install-deps
 	$(PYTHON) map-generator.py
-
-##run-graphgen: run the graph generator 
-.PHONY: run-graphgen
-run-graphgen: install-deps
-	$(PYTHON) graph-generator.py
-
-##test: test your code
-.PHONY: test
-test: install-deps
-	$(PYTHON) -m test.py
 
 .PHONY: clean
 clean:
