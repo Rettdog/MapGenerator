@@ -1,1 +1,1 @@
-getPalette
+totalHits

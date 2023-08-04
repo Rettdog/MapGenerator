@@ -5,7 +5,7 @@ from pygame_widgets.button import Button
 import pygame
 import random
 import time
-from mapclasses import Line, Point, Graph, WindowInfo, WorldInfo
+from mapclasses import Line, Point, Graph, WindowInfo, WorldInfo, LinePartition
 from mapclasses import export_window_as_png
 import numpy as np
 
@@ -63,72 +63,107 @@ textBoxes = info.createTextBoxes()
 # Clear the screen
 window.fill(white)
 
-world = WorldInfo()
+world = WorldInfo(0, info.map_width, info.getMaximumLength(),
+                  0, info.win_height, info.getMaximumLength())
 
+#currently takes about 5 seconds
 def generateNodes():
+    startTime = time.time()
     drawLoading()
 
-    world.graph.clear()
+    world.graph.reset(info.getNumPoints())
 
     pygame.draw.rect(window, white, pygame.Rect(
         0, 0, info.map_width, info.win_height))
 
-    lines=[]
+    world.graph.fillMatrixRandom(0, 0, info.map_width, info.win_height)
+    world.graph.partition(0, info.map_width, info.getMaximumLength(), 0, info.win_height, info.getMaximumLength())
 
-    for i in range(info.getNumPoints()):
-        pos = Point(random.randint(0, info.map_width),
-                        random.randint(0, info.win_height))
-        currentAmount = 0
-        connectionIds = []
-        for id in world.graph.getGraph().keys():
-            node = world.graph.getGraph()[id]
-            currentLine = Line(pos, node[0])
+    world.clearLines(0, info.map_width, info.getMaximumLength(), 0, info.win_height, info.getMaximumLength())
 
-            if currentLine.calculateLength() > info.getMinimumLength():
+    needConnections = list(range(world.graph.size))
+
+    iterations = 0
+    while len(needConnections) > world.graph.size*0.05 and iterations < 5:
+
+        for currentId in needConnections:
+
+            #saves a lot of time
+            if sum(world.graph.matrix[currentId, :]) >= info.getMinimumConnections():
                 continue
 
-            shouldDrawLine = True
-            for line in lines:
-                if currentLine.isIntersecting(line):
-                    shouldDrawLine=False
-                    break
-            if shouldDrawLine:
-                currentAmount+=1
-                lines.append(currentLine)
-                pygame.draw.line(window, black, currentLine.startPos, currentLine.endPos)
-                connectionIds.append(id)
+            currentNode = world.graph.getNode(currentId)
 
-            if currentAmount>=info.getMinimumConnections():
-                break
-        world.graph.addNodeWithConnections(pos, connectionIds)
+            closeIds = world.graph.getCloseIds(currentId).copy()
+            random.shuffle(closeIds)
+            for checkingId in closeIds:
+                checkingNode = world.graph.getNode(checkingId)
 
-    for id in world.graph.getIds():
-        currentPoint = start = world.graph.getGraph()[id]
-        start = currentPoint[0]
-        pygame.draw.circle(window, red, start.asCoordinate(), 4)
-        for connectionId in world.graph.getGraph()[id][1]:
-            end = world.graph.getGraph()[connectionId][0]
-            pygame.draw.line(window, black, start.asCoordinate(), end.asCoordinate())
+                currentLine = Line(currentNode, checkingNode)
+
+                # not the bottle neck
+                if currentLine.calculateLength() > info.getMaximumLength():
+                    closeIds.remove(checkingId)
+                    continue
+
+                # takes 3 seconds (current bottleneck)
+                shouldDrawLine = True
+                # print(f'total lines: {lines.totalLines}')
+
+                closeLines = world.lines.getCloseLines(currentNode).copy()
+
+                # print(f'close lines: {len(closeLines)}')
+                for line in closeLines:
+                    if currentLine.isIntersecting(line):
+                        shouldDrawLine=False
+                        break
+
+                if shouldDrawLine:
+                    world.lines.addLine(currentLine)
+                    world.graph.addConnection(currentId, checkingId)
+
+                    #saves 4 seconds
+                    if sum(world.graph.matrix[currentId, :]) > info.getMinimumConnections():
+                        continue
+                    # if sum(world.graph.matrix[checkingId, :]) > info.getMinimumConnections():
+                    #     removeIds.add(checkingId)
+            
+        needConnections = [x for x in needConnections if sum(
+            world.graph.matrix[x, :]) < info.getMinimumConnections()]
+        
+        iterations+=1
+
+    endTime = time.time()
+    print(f'time to create graph: {endTime-startTime}')
+
+    # not the bottleneck
+    for line in world.lines.allLines:
+
+        pygame.draw.line(window, black, line.start, line.end)
+
+    for node in world.graph.getAllNodes():
+
+        pygame.draw.circle(window, red, node, 4)
 
     pygame.display.update()
 
 def initPath():
     world.clearPath()
-    currentId = world.graph.getRandomNodes(1)[0]
+    currentId = world.graph.getRandomIds(1)[0]
     world.path.append(currentId)
-    world.pathPoints.append(world.graph.getGraph()[currentId][0].asCoordinate())
+    world.pathPoints.append(world.graph.getNode(currentId))
     # pygame.draw.circle(window, blue, graph.getGraph()[currentId][0].asCoordinate(), 5)
 
 def step():
     minContinentSides = sidesSlider.getValue()
     currentId = world.path[-1]
     if len(world.path) > 1:
-        nextId = world.graph.getRandomConnection(currentId, world.path[1:])
+        nextId = world.graph.getCloseRandomConnection(currentId, world.path[0], world.path[1:], 2)
     else:
-        nextId = world.graph.getRandomConnection(currentId, [])
+        nextId = world.graph.getRandomConnection(currentId)
 
     if nextId == -1:
-        nextId = world.graph.getRandomConnection(currentId, [])
+        nextId = world.graph.getCloseRandomConnection(currentId, world.path[0], world.path[1:], 2)
         return -1
 
     if nextId in world.path:
@@ -138,6 +173,8 @@ def step():
                 path = world.path[firstIndex:]
                 pathPoints = world.pathPoints[firstIndex:]
                 world.continents.append(pathPoints)
+                for point in pathPoints:
+                    world.continentPoints.addPoint(point)
 
                 color = info.getSemiRandomColor(
                         pathPoints[0][1]/info.win_height)
@@ -150,8 +187,12 @@ def step():
             return -1
     if nextId != -1:
         world.path.append(nextId)
-        world.pathPoints.append(world.graph.getGraph()[
-                                nextId][0].asCoordinate())
+        world.pathPoints.append(world.graph.getNode(nextId))
+
+        # # Remove next two lines
+        # Line(world.pathPoints[-2], world.pathPoints[-1]).drawLine(window, black)
+        # pygame.display.update()
+
     if len(world.path) > 100:
         return -1
     return 0
@@ -182,8 +223,9 @@ def drawContinents():
     pygame.display.update()
 
 def generateContinent():
+    startTime = time.time()
     drawLoading()
-    if len(world.graph.getIds()) == 0:
+    if world.graph.nextIndex == 0:
         return
     timeout = 0
     createdContinent = False
@@ -198,8 +240,10 @@ def generateContinent():
             if stepOutcome == -1:
                 isStepping = False
         timeout+=1
-        if timeout>1000:
+        if timeout>200:
             break
+    endTime = time.time()
+    # print(f'time to generate continent: {endTime-startTime} (timeout={timeout})')
     redraw()
 
 def updateColor():
@@ -210,43 +254,40 @@ def updateColor():
     for continent in world.continents:
         color = info.getSemiRandomColor(continent[0][1]/info.win_height)
         world.continentColors.append(color)
-    drawContinents()
+    redraw()
 
 def generateMultipleContinents():
     drawLoading()
     pygame.draw.rect(window, info.getWater(), pygame.Rect(
         0, 0, map_width, info.win_height))
-    for i in range(info.sliders['continents'].getValue()):
+    for _ in range(info.sliders['continents'].getValue()):
         generateContinent()
     redraw()
     pygame.display.update()
 
 def waterDepth(x,y, color):
-    point = Point(x, y)
+    point:Point = (x, y)
     minLength = info.getWaterMinLength()
     width = info.getWaterWidth()
     multiplier = info.getWaterMultiplier()
     sections = 6
     firstLayerMultiplier = 1.1
 
-    for continent in world.continents:
+    for continentPoint in world.continentPoints.getClosePoints((x,y), (width*6)//world.continentPoints.partitions['width']):
 
-        lengths = min(sections, len(continent))
+        length = Line(continentPoint, (x,y)).calculateLength()
 
-        for i in range(lengths):
-            length = Line(point, Point(
-                continent[i*len(continent)//sections][0], continent[i*len(continent)//sections][1])).calculateLength()
-            if length < minLength:
-                minLength = length
-                if minLength < width*firstLayerMultiplier:
-                    layer = minLength//(width*firstLayerMultiplier)
-                    offset = int(random.randrange(1, 3) -
-                                multiplier*layer)
-                    color[0] = max(0, min(info.getWater()[0] + offset, 255))
-                    color[1] = max(0, min(info.getWater()[1] + offset, 255))
-                    color[2] = max(0, min(info.getWater()[2] + offset, 255))
+        if length < minLength:
+            minLength = length
+            if minLength < width*firstLayerMultiplier:
+                layer = minLength//(width*firstLayerMultiplier)
+                offset = int(random.randrange(1, 3) -
+                            multiplier*layer)
+                color[0] = max(0, min(info.getWater()[0] + offset, 255))
+                color[1] = max(0, min(info.getWater()[1] + offset, 255))
+                color[2] = max(0, min(info.getWater()[2] + offset, 255))
 
-                    return (layer, color)
+                return (layer, color)
 
     layer = (minLength-width*(firstLayerMultiplier-1))//width
     offset = int(random.randrange(1, 3) -
@@ -258,11 +299,12 @@ def waterDepth(x,y, color):
     
     return (layer, color)
     
-def refine(shape=None, attemptsPerIteration=1500):
+def refine(shape=None, attemptsPerIteration=10000):
     drawLoading()
     if shape is None:
         shape = info.shapes[shapeSlider.getValue()]
-    if shape == 'dot':
+    print(shape)
+    if shape == 'dot' or shape == 'dot [d]':
 
         for j in range(5, 1, -1):
             for i in range(0, attemptsPerIteration):
@@ -276,7 +318,7 @@ def refine(shape=None, attemptsPerIteration=1500):
                 else:
                     pygame.draw.circle(window, color, (x, y), j)
 
-    elif shape == 'square':
+    elif shape == 'square' or shape == 'square [s]':
 
         for j in range(6, 1, -1):
             for i in range(0, attemptsPerIteration):
@@ -292,7 +334,7 @@ def refine(shape=None, attemptsPerIteration=1500):
                     rect = pygame.Rect(x-j//2, y-j//2, j, j)
                     pygame.draw.rect(window, color, rect)
 
-    elif shape == 'triangle':
+    elif shape == 'triangle' or shape == 'triangle [p]':
 
         for j in range(7, 2, -1):
             for i in range(0, attemptsPerIteration):
@@ -312,7 +354,7 @@ def refine(shape=None, attemptsPerIteration=1500):
 
                 pygame.draw.polygon(window, color, [(x1, y1), (x2, y2), (x3, y3)])
 
-    elif shape == 'blur':
+    elif shape == 'blur' or shape == 'blur [g]':
 
         window.set_colorkey(info.getWater())
         waterMask = pygame.mask.from_surface(window)
@@ -327,7 +369,7 @@ def refine(shape=None, attemptsPerIteration=1500):
             setcolor=info.getWater(), unsetcolor=(0, 0, 0, 0)), rect)
         window.blit(blurred_image, rect)
 
-    elif shape == 'water':
+    elif shape == 'water' or shape == 'water [o]':
 
         approachingEnd = False
         while not approachingEnd:
@@ -359,6 +401,7 @@ def refine(shape=None, attemptsPerIteration=1500):
 def clearContinents():
     drawLoading()
     world.clearContinents()
+    world.continentPoints.reset()
     redraw()
 
 def redraw():
@@ -421,7 +464,7 @@ while running:
 
             # blur continent colors
             if event.key == pygame.K_g:
-                refine('blur')
+                refine('blur', 1500)
 
             # convert to black and white
             if event.key == pygame.K_w:
@@ -436,19 +479,19 @@ while running:
 
         # roughen edges with dots
         if keys[pygame.K_d]:
-            refine('dot')
+            refine('dot', 1000)
 
         # roughen edges with squares
         if keys[pygame.K_s]:
-            refine('square')
+            refine('square', 1000)
                     
         # roughen edges with triangles
         if keys[pygame.K_p]:
-            refine('triangle')
+            refine('triangle', 1000)
 
         # add color to just deep ocean for faster rendering of other roughening algorthims
         if keys[pygame.K_o]:
-            refine('water')
+            refine('water', 1000)
 
     pygame.draw.rect(window, white, pygame.Rect(info.map_width, 0, info.slider_width, info.win_height))
 

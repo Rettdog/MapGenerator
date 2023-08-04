@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple, List
 import pygame_widgets
 from pygame_widgets.slider import Slider
 from pygame_widgets.textbox import TextBox
@@ -7,58 +7,21 @@ import pygame
 import math
 import random
 import time
+import numpy as np
 
 
 def ccw(A, B, C):
-    return (C.y-A.y)*(B.x-A.x) > (B.y-A.y)*(C.x-A.x)
+    return (C[1]-A[1])*(B[0]-A[0]) > (B[1]-A[1])*(C[0]-A[0])
 
-class Point:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-
-    def display(self):
-        print(f'Point:\nX: {self.x}\nY: {self.y}')
-
-    def asCoordinate(self):
-        return (self.x, self.y)
-
+Point = tuple[int, int]
 
 class Line:
-    def __init__(self, start, end):
+    def __init__(self, start:Point, end:Point):
         self.start = start
-        self.startPos = (start.x, start.y)
         self.end = end
-        self.endPos = (end.x, end.y)
-        self.slope = (end.y-start.y)/(end.x-start.x+0.00000001)
 
     def display(self):
-        print(f'Line:\nStart: {self.startPos}\nEnd: {self.endPos}')
-
-    def isParellel(self, otherLine) -> bool:
-        return self.slope == otherLine.slope
-    
-    def findIntersection(self, otherLine) -> Optional[Point]:
-
-        if self.isParellel(otherLine):
-            return None
-
-        x = ( otherLine.start.y - self.start.y + self.slope*self.start.x - otherLine.slope*otherLine.start.x ) / (self.slope - otherLine.slope)
-        y = self.start.y + self.slope * (x - self.start.x)
-
-        withinOwnX = (x < self.end.x and self.start.x < x) or (
-            x > self.end.x and self.start.x > x)
-        withinOtherX = (x < otherLine.end.x and otherLine.start.x < x) or (
-            x > otherLine.end.x and otherLine.start.x > x)
-        withinOwnY = (y < self.end.y and self.start.y < y) or (
-            y > self.end.y and self.start.y > y)
-        withinOtherY = (y < otherLine.end.y and otherLine.start.y < y) or (
-            y > otherLine.end.y and otherLine.start.y > y)
-
-        if withinOwnX and withinOtherX and withinOwnY and withinOtherY:
-            return Point(x,y)
-
-        return None
+        print(f'Line:\nStart: {self.start}\nEnd: {self.end}')
     
     def isIntersecting(self, otherLine):
 
@@ -67,104 +30,376 @@ class Line:
         C = otherLine.start
         D = otherLine.end
 
-        if A.asCoordinate() == C.asCoordinate() or A.asCoordinate() == D.asCoordinate() or B.asCoordinate() == C.asCoordinate() or B.asCoordinate() == D.asCoordinate():
+        if A == C or A == D or B == C or B == D:
             return False
 
         return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
     
     def drawLine(self, window, color):
-        pygame.draw.line(window, color, self.startPos, self.endPos)
+        pygame.draw.line(window, color, self.start, self.end)
 
     def calculateLength(self):
-        return math.sqrt((self.start.x-self.end.x)**2 + (self.start.y-self.end.y)**2)
-    
-class ConnectedPoint(Point):
-
-    def __init__(self, point: Point):
-        self.x = point.x
-        self.y = point.y
-        self.connections = []
-        self.lines = []
-    
-    def addConnection(self, point: Point):
-        self.connections.append(point)
-
-    def removeConnection(self, point: Point):
-        self.connections.remove(point)
-
-    def addLine(self, line: Line):
-        self.lines.append(line)
-
-    def display(self):
-        print(f'ConnectedPoint:\nX: {self.x}\nY: {self.y}')
-        for point in self.connections:
-            print(f'   Point:\nX: {self.x}\nY: {self.y}')
+        return math.sqrt((self.start[0]-self.end[0])**2 + (self.start[1]-self.end[1])**2)
 
 class Graph:
 
-    def __init__(self):
-        self.graph = {}
-        self.ids = []
+    def __init__(self, size=200):
 
-    def getIds(self):
-        return self.ids
+        self.size = size
+        self.matrix = np.zeros((size, size), dtype=bool)
+        self.nodes = np.zeros(size, dtype=object)
+        self.nextIndex = 0
+        self.emptyIds = []
+        self.partitions = {"width":-1, "height":-1, "numX":0, "numY":0, "array":None}
 
-    def getGraph(self):
-        return self.graph
+    def getMatrix(self):
+        return self.matrix
 
-    def generateNewId(self):
-        newId = len(self.ids)
-        self.ids.append(newId)
-        return newId
+    def getAllNodes(self):
+        return self.nodes
     
-    def addNode(self, point: Point):
-        id = self.generateNewId()
-        self.graph[id] = (point, [])
-        return id
+    def getNode(self, id:int):
+        return self.nodes[id]
     
-    def addConnection(self, id1: int, id2: int):
-        self.graph[id1][1].append(id2)
-        self.graph[id2][1].append(id1)
+    def getNodes(self, ids:List[int]):
+        return self.nodes[ids]
 
-    def addNodeWithConnections(self, point:Point, connections):
-        id = self.generateNewId()
-        self.graph[id] = (point, [])
-        for connectionId in connections:
-            self.addConnection(id, connectionId)
+    def addNode(self, point:Point):
 
-
-    def getNodeId(self, point:Point):
-        for id,node in self.graph.items():
-            if node[0]==point:
-                return id
-        return -1
+        if len(self.emptyIds) >0 :
+            self.nodes[self.emptyIds.pop()] = point
+        else:
+            self.nodes[self.nextIndex] = point
+            self.nextIndex += 1
     
-    def getRandomNodes(self, amount):
-        outputIds = []
-        if amount>len(self.ids):
-            return outputIds
-        while len(outputIds) < amount:
-            id = self.ids[random.randrange(0,len(self.ids))]
-            if not id in outputIds:
-                outputIds.append(id)
-        return outputIds
+    def addNodes(self, positions: List[Point]):
+
+        while len(self.emptyIds) > 0 and len(positions) > 0:
+            self.nodes[self.emptyIds.pop()] = positions.pop()
+
+        if self.nextIndex+len(positions) > self.size:
+            raise IndexError("Attempting to add too many nodes")
+        self.nodes[self.nextIndex:self.nextIndex + len(positions)] = positions
+
+    def removeNode(self, id:int):
+
+        self.nodes[id] = 0
+        self.matrix[id, :] = np.zeros(self.size)
+        self.matrix[:, id] = np.zeros(self.size)
+        self.emptyIds.append(id)
+
+    def addConnection(self, id1:int, id2:int):
+        self.matrix[id1, id2] = self.matrix[id2, id1] = 1
+
+    def addConnections(self, ids: List[Tuple[int, int]]):
+
+        for id1, id2 in ids:
+            self.matrix[id1, id2] = self.matrix[id2, id1] = 1
+
+    def removeConnection(self, id1: int, id2: int):
+        self.matrix[id1, id2] = self.matrix[id2, id1] = 0
+
+    def getRandomIds(self, amount:int):
+        
+        if self.size < amount:
+            return range(self.size)
+        
+        return random.sample(range(self.size), amount)
+        
+    def getConnections(self, id:int):
+
+        raw = self.matrix[id,:]
+
+        return [value*id for id, value in enumerate(raw) if value != 0]
     
-    def getRandomConnection(self, id, exludeIds):
-        if id in self.ids:
-            connections = list(set(self.graph[id][1]) - set(exludeIds))
-            if len(connections) == 0:
-                return -1
+    def getRandomConnection(self, id:int, exclude:List[int]=[]):
+
+        connections = [x for x in self.getConnections(id) if x not in exclude]
+
+        if len(connections) == 0:
+            return -1
+
+        return random.sample(connections, 1)[0]
+    
+    def getCloseRandomConnection(self, id: int,  homeId: int, exclude: List[int] = [], numSections: int = 1):
+
+        connections = [x for x in self.getConnections(id) if x not in exclude and x in self.getCloseIds(homeId, numSections)]
+
+        if len(connections) == 0:
+            return -1
+
+        return random.sample(connections, 1)[0]
+    
+    def fillMatrixRandom(self, xMin, yMin, xMax, yMax):
+
+        while len(self.emptyIds) > 0:
+            self.nodes[self.emptyIds.pop()] = (
+                random.randint(xMin, xMax), random.randint(yMin, yMax))
+        while self.nextIndex < self.size:
+            self.nodes[self.nextIndex] = (
+                random.randint(xMin, xMax), random.randint(yMin, yMax))
+            self.nextIndex += 1
+
+    def partition(self, xMin: int, xMax: int, width:int, yMin:int, yMax: int, height: int):
+
+        numXSections = (xMax-xMin)//width
+        numYSections = (yMax-yMin)//height
+
+        self.partitions['numX'] = numXSections
+        self.partitions['numY'] = numYSections
+
+        sectionWidth = math.ceil((xMax-xMin)/numXSections)
+        sectionHeight = math.ceil((yMax-yMin)/numYSections)
+
+        self.partitions['width'] = sectionWidth
+        self.partitions['height'] = sectionHeight
+
+        self.partitions['array'] = [[[]]*numXSections]*numYSections
+
+        for id, node in enumerate(self.nodes):
+            self.partitions['array'][node[1]//sectionHeight][node[0]//sectionWidth].append(id)
+
+    def getCloseIds(self, id:int, numSections:int=1):
+        startTime = time.time()
+
+        xSection = self.nodes[id][0] // self.partitions['width']
+        ySection = self.nodes[id][1] // self.partitions['height']
+
+        xBounds = range(max(0, xSection-numSections), min(int(self.partitions['numX']), xSection+numSections))
+        yBounds = range(max(0, ySection-numSections), min(int(self.partitions['numY']), ySection+numSections))
+
+        output = []
+        for x in xBounds:
+            for y in yBounds:
+                output.extend(self.partitions['array'][y][x])
+
+        # print(f'time to get close ids: {time.time() - startTime}')
+        return output
+
+    def getClosestDistance(self, id: int):
+        '''assumes sections are squares'''
+
+        currentX = self.nodes[id][0]
+        currentY = self.nodes[id][1]
+
+        xSection = currentX // self.partitions['width']
+        ySection = currentY // self.partitions['height']
+
+        centerX = (xSection+0.5)*self.partitions['width']
+        centerY = (ySection+0.5)*self.partitions['height']
+
+        minDistance = self.partitions['numX']*self.partitions['width']
+
+        minDistanceId = -1
+
+        extraIterationsLeft = 1
+
+        for numSections in range(0, max(int(self.partitions['numX']), self.partitions['numY'])):
+
+            xBounds = range(max(0, xSection-numSections),
+                            min(int(self.partitions['numX']), xSection+numSections))
+            yBounds = range(max(0, ySection-numSections),
+                            min(int(self.partitions['numY']), ySection+numSections))
+
             
-            return connections[random.randrange(0,len(connections))]
-        return -1
-    
-    def display(self):
-        for key, value in self.graph.items():
-            print(f'{key}: ({value[0].x}, {value[0].y}) -> {value[1]}')
+            for x in xBounds:
+                for y in yBounds:
+                    checkingIds = self.partitions['array'][y][x]
+                    for id in checkingIds:
+                        checkingX = self.nodes[id][0]
+                        checkingY = self.nodes[id][1]
+                        length = Line((currentX, currentY), (checkingX, checkingY)).calculateLength()
+                        if length<minDistance:
+                            minDistance = length
+                            minDistanceId = id
 
-    def clear(self):
-        self.graph = {}
-        self.ids = []
+            if minDistance > (numSections+1)*(self.partitions['width']**2+self.partitions['height']**2)**0.5:
+                extraIterationsLeft = 2
+                break
+
+            if minDistanceId != -1:
+                extraIterationsLeft -= 1
+
+            if extraIterationsLeft == 0:
+                break
+        
+        return minDistanceId
+
+    def display(self):
+        print(self.matrix)
+
+    def reset(self, size=-1):
+        if size != -1:
+            self.size = size
+
+        self.matrix = np.zeros((self.size, self.size), dtype=bool)
+        self.nodes = np.zeros(self.size, dtype=object)
+        self.nextIndex = 0
+        self.emptyIds = []
+        self.partitions = {"width":-1, "height":-1, "numX":0, "numY":0, "array":None}
+
+
+class LinePartition:
+
+    def __init__(self, xMin: int, xMax: int, width: int, yMin: int, yMax: int, height: int):
+
+        numXSections = (xMax-xMin)//width
+        numYSections = (yMax-yMin)//height
+
+        self.partitions = {}
+
+        self.partitions['numX'] = numXSections
+        self.partitions['numY'] = numYSections
+
+        sectionWidth = math.ceil((xMax-xMin)/numXSections)
+        sectionHeight = math.ceil((yMax-yMin)/numYSections)
+
+        self.partitions['width'] = sectionWidth
+        self.partitions['height'] = sectionHeight
+
+        
+        matrix = []
+        for _ in range(numYSections):
+            row = []
+            for __ in range(numXSections):
+                row.append([])
+            matrix.append(row)
+
+        self.partitions['array'] = matrix
+
+        # print(f'rows: {len(matrix)}')
+        # print(f'cols: {len(matrix[0])}')
+
+        self.totalLines = 0
+        self.allLines = []
+
+    def getAllLines(self):
+        return self.allLines
+
+    def addLine(self, line: Line):
+
+        startXSection = line.start[0]//self.partitions['width']
+        startYSection = line.start[1] // self.partitions['height']
+
+        endXSection = line.end[0]//self.partitions['width']
+        endYSection = line.end[1] // self.partitions['height']
+
+        if startXSection != endXSection or startYSection != endYSection:
+
+            self.partitions['array'][startYSection][startXSection].append(line)
+            self.partitions['array'][endYSection][endXSection].append(line)
+
+            # print(
+            #     f'adding line to ({startXSection}, {startYSection}) and ({endXSection}, {endYSection})')
+        else:
+            self.partitions['array'][startYSection][startXSection].append(line)
+            # print(
+            #     f'adding line to ({startXSection}, {startYSection})')
+            
+        self.allLines.append(line)
+        self.totalLines += 1
+        
+        
+
+    def getCloseLines(self, node: Point, numSections: int = 1):
+
+        xSection = node[0] // self.partitions['width']
+        ySection = node[1] // self.partitions['height']
+
+        xBounds = range(max(0, xSection-numSections),
+                        min(int(self.partitions['numX']), xSection+numSections+1))
+        yBounds = range(max(0, ySection-numSections),
+                        min(int(self.partitions['numY']), ySection+numSections+1))
+
+        # print(len(xBounds)*len(yBounds))
+
+        output = []
+        for x in xBounds:
+            for y in yBounds:
+                output.extend(self.partitions['array'][y][x])
+
+        # print(f'output length: {len(output)}')
+        # print(f'set output length: {len(set(output))}')
+
+        # always returning every line in the LinePartition rather than just a subset that would increase efficiency
+        return list(set(output))
+
+    def reset(self):
+        self.partitions['array'] = [[[]]*self.partitions['numX']]*self.partitions['numY']
+
+    def partitionSizes(self):
+        return [[len(set(x)) for x in y] for y in self.partitions['array']]
+
+
+class PointPartition:
+
+    def __init__(self, xMin: int, xMax: int, width: int, yMin: int, yMax: int, height: int):
+
+        numXSections = (xMax-xMin)//width
+        numYSections = (yMax-yMin)//height
+
+        self.partitions = {}
+
+        self.partitions['numX'] = numXSections
+        self.partitions['numY'] = numYSections
+
+        sectionWidth = math.ceil((xMax-xMin)/numXSections)
+        sectionHeight = math.ceil((yMax-yMin)/numYSections)
+
+        self.partitions['width'] = sectionWidth
+        self.partitions['height'] = sectionHeight
+
+        matrix = []
+        for _ in range(numYSections):
+            row = []
+            for __ in range(numXSections):
+                row.append([])
+            matrix.append(row)
+
+        self.partitions['array'] = matrix
+
+        # print(f'rows: {len(matrix)}')
+        # print(f'cols: {len(matrix[0])}')
+
+        self.totalPoints = 0
+        self.allPoints = []
+
+    def getAllPoints(self):
+        return self.allPoints
+
+    def addPoint(self, point: Point):
+
+        xSection = point[0]//self.partitions['width']
+        ySection = point[1] // self.partitions['height']
+        
+        self.partitions['array'][ySection][xSection].append(point)
+
+        self.allPoints.append(point)
+        self.totalPoints += 1
+
+    def getClosePoints(self, node: Point, numSections: int = 1):
+
+        xSection = node[0] // self.partitions['width']
+        ySection = node[1] // self.partitions['height']
+
+        xBounds = range(max(0, xSection-numSections),
+                        min(int(self.partitions['numX']), xSection+numSections+1))
+        yBounds = range(max(0, ySection-numSections),
+                        min(int(self.partitions['numY']), ySection+numSections+1))
+
+        output = []
+        for x in xBounds:
+            for y in yBounds:
+                output.extend(self.partitions['array'][y][x])
+
+        return output
+
+    def reset(self):
+        self.partitions['array'] = [
+            [[]]*self.partitions['numX']]*self.partitions['numY']
+
+    def partitionSizes(self):
+        return [[len(x) for x in y] for y in self.partitions['array']]
 
 class Text:
 
@@ -217,7 +452,7 @@ class WindowInfo:
 
         self.density_coefficient = density_coefficient
 
-        self.shapes = ['dot', 'square', 'triangle', 'blur', 'water']
+        self.shapes = ['dot [d]', 'square [s]', 'triangle [p]', 'blur [g]', 'water [o]']
 
 
         # create palettes
@@ -229,7 +464,7 @@ class WindowInfo:
                           pygame.Color('#a68a64'), pygame.Color('#656d4a'), 
                           pygame.Color('#333d29'), pygame.Color('#676f54'), 
                           pygame.Color('#7d7d70'), pygame.Color('#858A89'),
-                          pygame.Color('#faf3dd'), pygame.Color('#fcfffc')], (0, 50, 100), 10, True)
+                          pygame.Color('#faf3dd'), pygame.Color('#fcfffc')], (0, 50, 100), 10, False)
         
         originalPalette = ('original', 
                            [pygame.Color('#c2c5aa'), pygame.Color('#b6ad90'),
@@ -278,15 +513,18 @@ class WindowInfo:
         densitySlider = Slider(
             window, self.map_width+20, 40, self.slider_width-40, 10, min=self.density[0], max=self.density[2], step=1, initial=self.density[1])
 
-        sidesSlider = Slider(window, self.map_width+20, 80, self.slider_width -
-                             40, 10, min=self.continent_sides[0], max=self.continent_sides[2], step=1, initial=self.continent_sides[1])
-
-        distanceSlider = Slider(window, self.map_width+20, 120,
+        
+        distanceSlider = Slider(window, self.map_width+20, 80,
                                 self.slider_width-40, 10, min=self.min_distance[0], max=self.min_distance[2], step=1, initial=self.min_distance[1])
 
-        connectionsSlider = Slider(window, self.map_width+20, 160, self.slider_width -
+        connectionsSlider = Slider(window, self.map_width+20, 120, self.slider_width -
                                    40, 10, min=self.min_connections[0], max=self.min_connections[2], step=1, initial=self.min_connections[1])
         
+
+        sidesSlider = Slider(window, self.map_width+20, 240, self.slider_width -
+                     40, 10, min=self.continent_sides[0], max=self.continent_sides[2], step=1, initial=self.continent_sides[1])
+
+
         continentsSlider = Slider(window, self.map_width+20, 280,
                                   self.slider_width-40, 10, min=self.num_continents[0], max=self.num_continents[2], step=1, initial=self.num_continents[1])
 
@@ -316,7 +554,7 @@ class WindowInfo:
         
     def createButtons(self, window, generateNodes, changePalette, generateContinents, clearContinents, refine, redraw, autoGenerate, colorWater, exportWindow):
 
-        nodeButton = Button(window, self.map_width+20, 200, self.slider_width -
+        nodeButton = Button(window, self.map_width+20, 160, self.slider_width -
                             40, 30, onClick=generateNodes, inactiveColour=(150, 100, 100), radius=self.buttonRadius)
         
         colorButton = Button(window, self.map_width+20, 400, self.slider_width -
@@ -364,7 +602,7 @@ class WindowInfo:
                         self.win_width - self.slider_width//2, 20)
 
         mapText = Text('Continent Generation', black, self.titleFont,
-                        self.win_width - self.slider_width//2, 260)
+                        self.win_width - self.slider_width//2, 220)
         
         waterText = Text('Water Depth', black, self.titleFont,
                        self.win_width - self.slider_width//2, 540)
@@ -378,7 +616,7 @@ class WindowInfo:
         sidesText = Text('Continent Sides: ', black, self.font,
                          self.win_width - self.slider_width//2, self.sliders['sides'].getY()+self.textSpacing, slider=self.sliders['sides'])
         
-        distanceText = Text('Minimum Distance: ', black, self.font,
+        distanceText = Text('Maximum Distance: ', black, self.font,
                             self.win_width - self.slider_width//2, self.sliders['distance'].getY()+self.textSpacing, slider=self.sliders['distance'])
         
         connectionsText = Text('Connections: ', black, self.font,
@@ -408,7 +646,7 @@ class WindowInfo:
         colorButtonText = Text('Update Color Palette', black, self.font,
                                self.win_width - self.slider_width//2, self.buttons['color'].getY()+self.buttons['color'].getHeight()//2)
 
-        mapButtonText = Text('Generate', black, self.font,
+        mapButtonText = Text('Generate [ ]', black, self.font,
                              self.buttons['map'].getX()+self.buttons['map'].getWidth()//2, self.buttons['map'].getY()+self.buttons['map'].getHeight()//2)
         
         clearButtonText = Text('Clear', black, self.font,
@@ -440,7 +678,7 @@ class WindowInfo:
     def getMinimumConnections(self):
         return self.sliders['connections'].getValue()
     
-    def getMinimumLength(self):
+    def getMaximumLength(self):
         return self.sliders['distance'].getValue()
     
     def getNumPoints(self):
@@ -486,15 +724,19 @@ class WindowInfo:
 
 class WorldInfo:
 
-    def __init__(self):
+    def __init__(self, xMin: int, xMax: int, width: int, yMin: int, yMax: int, height: int):
 
         self.continents = []
+        self.continentPoints = PointPartition(xMin, xMax, int(width*1.5), yMin, yMax, int(height*1.5))
         self.continentColors = []
 
         self.path = []
         self.pathPoints = []
 
         self.graph = Graph()
+
+        self.lines = LinePartition(xMin, xMax, int(width*1.5), yMin, yMax, int(height*1.5))
+        
 
     def clearContinents(self):
         self.continents = []
@@ -503,6 +745,9 @@ class WorldInfo:
     def clearPath(self):
         self.path = []
         self.pathPoints = []
+
+    def clearLines(self, xMin: int, xMax: int, width: int, yMin: int, yMax: int, height: int):
+        self.lines = LinePartition(xMin, xMax, int(width*1.5), yMin, yMax, int(height*1.5))
 
 def export_window_as_png(window, width, height):
     # Get the surface of the window
