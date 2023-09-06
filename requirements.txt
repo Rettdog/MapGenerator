@@ -3,4 +3,5 @@ numpy==1.24.1
 protobuf==4.21.12
 six==1.16.0
 termgraph==0.5.3
-pygame
+pygame-ce
+pygame_widgets
